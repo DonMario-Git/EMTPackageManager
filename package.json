@@ -1,0 +1,20 @@
+{
+  "name": "com.emt.package-manager",
+  "version": "1.0.0",
+  "displayName": "EMT Package Manager",
+  "description": "Editor-only tool that discovers, checks and updates every com.emt.* package installed in the project using GitHub Releases.",
+  "unity": "2022.3",
+  "keywords": [
+    "emt",
+    "package manager",
+    "updates",
+    "editor"
+  ],
+  "author": {
+    "name": "EMT"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DonMario-Git/EMTPackageManager.git"
+  }
+}
