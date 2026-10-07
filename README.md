@@ -49,6 +49,16 @@ Client.List() → filtro com.emt.* → repository.url (package.json) → GitHub 
 - Copia de seguridad previa en `Library/EMTPackageManager/manifest.backup.json`.
 - Confirmación siempre; las actualizaciones MAJOR muestran advertencia y **Update All** pide confirmación adicional para ellas.
 
+## Registro por defecto (opcional)
+
+`ProjectSettings/EMTPackageRegistry.json` lista los paquetes que quieres tener disponibles. Se crea desde **Settings > Create File** en la ventana:
+
+```json
+{ "packages": [ { "name": "com.emt.core", "repository": "https://github.com/DonMario-Git/EMTCore.git" } ] }
+```
+
+Cada entrada muestra su estado en Settings: `Installed`, `Available` (con botón **Install**, con confirmación), `Unavailable` o `Invalid`. Es solo datos: los paquetes instalados se siguen descubriendo con `Client.List()`.
+
 ## Seguridad
 
 Solo consulta metadata (`GET /repos/{owner}/{repo}/releases/latest`). No descarga ni ejecuta nada de GitHub. Las peticiones son asíncronas (timeout 15 s). El token de GitHub es opcional (repos privados / rate limit), usa uno de solo lectura: `EditorPrefs` lo guarda sin cifrar.

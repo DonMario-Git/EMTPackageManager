@@ -28,6 +28,10 @@ namespace EMT.Packages.Editor
         private static string ProjectRoot => Directory.GetParent(Application.dataPath).FullName;
         public static string ManifestPath => Path.Combine(ProjectRoot, "Packages", "manifest.json");
 
+        /// <summary>True when the tag is SemVer and only contains characters that are safe in a Git ref.</summary>
+        public static bool IsSafeRef(string tag) =>
+            !string.IsNullOrEmpty(tag) && SafeRef.IsMatch(tag) && EMTVersionUtility.TryParse(tag, out _);
+
         public static bool CanUpdate(EMTPackageInfo package, out string reason)
         {
             reason = null;

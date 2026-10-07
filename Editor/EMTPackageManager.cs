@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,6 +19,8 @@ namespace EMT.Packages.Editor
 
         private static List<EMTPackageInfo> _packages = new List<EMTPackageInfo>();
         private static int _refreshId;
+        private static int _registryRunId;
+        private static List<EMTRegistryEntry> _registry = new List<EMTRegistryEntry>();
 
         public static event Action Changed;
 
@@ -25,6 +28,10 @@ namespace EMT.Packages.Editor
         public static bool IsChecking { get; private set; }
         public static bool HasLoaded { get; private set; }
         public static string LastErrorMessage { get; private set; }
+
+        public static IReadOnlyList<EMTRegistryEntry> Registry => _registry;
+        public static bool IsCheckingRegistry { get; private set; }
+        public static string RegistryError { get; private set; }
 
         static EMTPackageManager()
         {
@@ -42,6 +49,12 @@ namespace EMT.Packages.Editor
             allowNetwork |= forceNetwork;
             int id = ++_refreshId;
             IsChecking = true;
+            IsCheckingRegistry = false;
+            Action<bool> wrapped = ok =>
+            {
+                if (ok) CheckRegistry(allowNetwork); // registry availability runs after discovery
+                completed?.Invoke(ok);
+            };
             LastErrorMessage = null;
             Notify();
 
@@ -49,7 +62,7 @@ namespace EMT.Packages.Editor
                 packages =>
                 {
                     if (id != _refreshId) return;
-                    OnDiscovered(packages, forceNetwork, allowNetwork, id, completed);
+                    OnDiscovered(packages, forceNetwork, allowNetwork, id, wrapped);
                 },
                 error =>
                 {
@@ -59,6 +72,101 @@ namespace EMT.Packages.Editor
                     Notify();
                     completed?.Invoke(false);
                 });
+        }
+
+        /// <summary>Loads the registry file and resolves each entry's state (Installed / Available / Unavailable / Invalid).</summary>
+        public static void CheckRegistry(bool allowNetwork)
+        {
+            int run = ++_registryRunId;
+            _registry = EMTPackageRegistry.Load(out string loadError);
+            RegistryError = loadError;
+            IsCheckingRegistry = false;
+
+            var pending = new List<EMTRegistryEntry>();
+            foreach (EMTRegistryEntry e in _registry)
+            {
+                if (e.State == EMTRegistryState.Invalid) continue;
+
+                EMTPackageInfo installed = _packages.FirstOrDefault(p => p.Name == e.Name);
+                if (installed != null)
+                {
+                    e.State = EMTRegistryState.Installed;
+                    e.InstalledVersion = installed.InstalledVersion;
+                    continue;
+                }
+
+                if (allowNetwork) pending.Add(e); // otherwise stays NotChecked
+            }
+
+            if (pending.Count == 0) { Notify(); return; }
+
+            IsCheckingRegistry = true;
+            Notify();
+
+            int remaining = pending.Count;
+            string token = EMTPackageManagerSettings.GitHubToken;
+
+            foreach (EMTRegistryEntry item in pending)
+            {
+                EMTRegistryEntry entry = item;
+                EMTGitHubClient.GetLatestReleaseAsync(entry.Repository, token, r =>
+                {
+                    if (run != _registryRunId) return;
+
+                    if (r.Success)
+                    {
+                        entry.State = EMTRegistryState.Available;
+                        entry.LatestTag = r.TagName;
+                        entry.LatestVersion = EMTVersionUtility.TryParse(r.TagName, out EMTSemVer v) ? v.ToString() : r.TagName;
+                        entry.Message = null;
+                    }
+                    else
+                    {
+                        entry.State = EMTRegistryState.Unavailable;
+                        entry.Message = r.Message;
+                    }
+
+                    if (--remaining == 0) IsCheckingRegistry = false;
+                    Notify();
+                });
+            }
+        }
+
+        /// <summary>Installs an Available registry entry via Client.Add. Returns an error message, or null if started.</summary>
+        public static string InstallFromRegistry(EMTRegistryEntry entry)
+        {
+            if (entry == null || entry.State != EMTRegistryState.Available) return "This package is not available to install.";
+            if (!EMTPackageUpdater.IsSafeRef(entry.LatestTag)) return "The latest release tag was not validated.";
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return "Exit Play Mode before installing packages.";
+
+            string baseUrl = entry.Repository;
+            int hash = baseUrl.IndexOf('#');
+            if (hash >= 0) baseUrl = baseUrl.Substring(0, hash);
+
+            UnityEditor.PackageManager.Requests.AddRequest request;
+            try { request = UnityEditor.PackageManager.Client.Add(baseUrl + "#" + entry.LatestTag); }
+            catch (Exception e) { return e.Message; }
+
+            EditorApplication.CallbackFunction poll = null;
+            poll = () =>
+            {
+                if (!request.IsCompleted) return;
+                EditorApplication.update -= poll;
+
+                if (request.Status == UnityEditor.PackageManager.StatusCode.Success)
+                {
+                    Debug.Log("[EMT Package Manager] Installed " + request.Result.name + "@" + request.Result.version);
+                    if (request.Result.name != entry.Name)
+                        Debug.LogWarning("[EMT Package Manager] Registry entry '" + entry.Name + "' installed a package named '" +
+                                         request.Result.name + "'. Check the registry file.");
+                }
+                else
+                {
+                    Debug.LogError("[EMT Package Manager] Install failed: " + (request.Error != null ? request.Error.message : "unknown error"));
+                }
+            };
+            EditorApplication.update += poll;
+            return null;
         }
 
         public static EMTUpdateResult UpdatePackages(IEnumerable<EMTPackageInfo> packages)

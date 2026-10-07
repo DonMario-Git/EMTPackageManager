@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -14,6 +15,7 @@ namespace EMT.Packages.Editor
         private Label _statusLabel;
         private Label _lastCheckLabel;
         private ScrollView _list;
+        private VisualElement _registryList;
 
         [MenuItem("EMT/Package Manager")]
         public static void Open()
@@ -80,6 +82,22 @@ namespace EMT.Packages.Editor
             tokenHint.style.fontSize = 10;
             tokenHint.style.color = new Color(0.6f, 0.6f, 0.6f);
             foldout.Add(tokenHint);
+
+            // Default package registry (JSON) + availability
+            var regTitle = new Label("Package registry (ProjectSettings/EMTPackageRegistry.json)");
+            regTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            regTitle.style.marginTop = 8;
+            foldout.Add(regTitle);
+
+            var regButtons = new VisualElement();
+            regButtons.style.flexDirection = FlexDirection.Row;
+            regButtons.Add(new Button(OnCreateRegistry) { text = "Create File" });
+            regButtons.Add(new Button(() => { if (EMTPackageRegistry.Exists) EditorUtility.OpenWithDefaultApp(EMTPackageRegistry.FilePath); }) { text = "Open File" });
+            regButtons.Add(new Button(() => EMTPackageManager.CheckRegistry(true)) { text = "Reload / Check" });
+            foldout.Add(regButtons);
+
+            _registryList = new VisualElement();
+            foldout.Add(_registryList);
             root.Add(foldout);
 
             // Status
@@ -203,6 +221,8 @@ namespace EMT.Packages.Editor
             System.DateTime? last = EMTPackageManagerSettings.LastCheckUtc;
             _lastCheckLabel.text = "Last check: " + (last.HasValue ? last.Value.ToLocalTime().ToString("g") : "never");
 
+            RebuildRegistry();
+
             _list.Clear();
             if (packages.Count == 0)
             {
@@ -314,6 +334,100 @@ namespace EMT.Packages.Editor
 
             if (actions.childCount > 0) card.Add(actions);
             return card;
+        }
+
+        private static void OnCreateRegistry()
+        {
+            if (!EMTPackageRegistry.CreateTemplate(out string error))
+                EditorUtility.DisplayDialog("Registry", "Could not create the file: " + error, "OK");
+            else
+                EMTPackageManager.CheckRegistry(false);
+        }
+
+        private void RebuildRegistry()
+        {
+            if (_registryList == null) return;
+            _registryList.Clear();
+
+            if (!EMTPackageRegistry.Exists)
+            {
+                _registryList.Add(Small("No registry file yet. Create one to list the packages you want available."));
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(EMTPackageManager.RegistryError))
+                _registryList.Add(Small(EMTPackageManager.RegistryError));
+            if (EMTPackageManager.IsCheckingRegistry)
+                _registryList.Add(Small("Checking availability..."));
+            if (EMTPackageManager.Registry.Count == 0 && string.IsNullOrEmpty(EMTPackageManager.RegistryError))
+                _registryList.Add(Small("The registry is empty."));
+
+            foreach (EMTRegistryEntry e in EMTPackageManager.Registry)
+            {
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems = Align.Center;
+                row.style.marginTop = 2;
+
+                var name = new Label(e.Name ?? "(no name)");
+                name.style.flexGrow = 1;
+                row.Add(name);
+
+                var state = new Label(RegistryText(e));
+                state.style.color = RegistryColor(e.State);
+                state.style.unityFontStyleAndWeight = FontStyle.Bold;
+                row.Add(state);
+
+                if (e.State == EMTRegistryState.Available)
+                {
+                    EMTRegistryEntry captured = e;
+                    row.Add(new Button(() => ConfirmAndInstall(captured)) { text = "Install" });
+                }
+                _registryList.Add(row);
+
+                if (!string.IsNullOrEmpty(e.Message))
+                {
+                    Label msg = Small(e.Message);
+                    msg.style.whiteSpace = WhiteSpace.Normal;
+                    _registryList.Add(msg);
+                }
+            }
+        }
+
+        private static void ConfirmAndInstall(EMTRegistryEntry e)
+        {
+            if (!EditorUtility.DisplayDialog("Install " + e.Name,
+                    e.Name + "\n\nVersion: " + e.LatestVersion + "\nRepository:\n" + e.Repository +
+                    "\n\nThe package will be added to Packages/manifest.json. Continue?",
+                    "Install", "Cancel"))
+                return;
+
+            string error = EMTPackageManager.InstallFromRegistry(e);
+            if (error != null) EditorUtility.DisplayDialog("Install failed", error, "OK");
+        }
+
+        private static string RegistryText(EMTRegistryEntry e)
+        {
+            switch (e.State)
+            {
+                case EMTRegistryState.Installed: return "Installed " + e.InstalledVersion;
+                case EMTRegistryState.Available: return "Available " + e.LatestVersion;
+                case EMTRegistryState.Unavailable: return "Unavailable";
+                case EMTRegistryState.Invalid: return "Invalid";
+                default: return "Not checked";
+            }
+        }
+
+        private static Color RegistryColor(EMTRegistryState s)
+        {
+            switch (s)
+            {
+                case EMTRegistryState.Installed: return new Color(0.30f, 0.75f, 0.40f);
+                case EMTRegistryState.Available: return new Color(0.35f, 0.60f, 0.95f);
+                case EMTRegistryState.Unavailable: return new Color(0.90f, 0.40f, 0.40f);
+                case EMTRegistryState.Invalid: return new Color(0.75f, 0.45f, 0.80f);
+                default: return new Color(0.6f, 0.6f, 0.6f);
+            }
         }
 
         private static string StatusText(EMTUpdateStatus s)
