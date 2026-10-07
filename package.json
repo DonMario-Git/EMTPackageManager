@@ -1,6 +1,6 @@
 {
   "name": "com.emt.package-manager",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "displayName": "EMT Package Manager",
   "description": "Editor-only tool that discovers, checks and updates every com.emt.* package installed in the project using GitHub Releases.",
   "unity": "2022.3",

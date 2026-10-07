@@ -50,7 +50,7 @@ namespace EMT.Packages.Editor
                 if (!string.Equals(e.Repository, package.RepositoryUrl, StringComparison.OrdinalIgnoreCase)) return false;
                 if (string.IsNullOrEmpty(e.LatestTag)) return false;
                 if (!DateTime.TryParse(e.LastCheckUtc, CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal, out DateTime checkedAt))
+                        DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime checkedAt))
                     return false;
 
                 TimeSpan age = nowUtc - checkedAt;

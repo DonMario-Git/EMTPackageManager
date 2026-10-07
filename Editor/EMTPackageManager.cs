@@ -342,7 +342,7 @@ namespace EMT.Packages.Editor
 
         private static DateTime ParseUtc(string s, DateTime fallback) =>
             DateTime.TryParse(s, CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal, out DateTime d) ? d : fallback;
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime d) ? d : fallback;
 
         private static void Notify()
         {
